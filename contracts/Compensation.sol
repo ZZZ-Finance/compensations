@@ -10,9 +10,9 @@ contract Compensation is Ownable {
 	using SafeMath for uint;
 	using SafeERC20 for IERC20;
 
-	uint256 totalAvailableTokens;
-	mapping(address => uint256) tokenClaimLimit;
-	mapping(address => uint256) tokensClaimed;
+	uint256 public totalAvailableTokens;
+	mapping(address => uint256) public tokenClaimLimit;
+	mapping(address => uint256) public tokensClaimed;
 	IERC20 public CompToken;
 
 	event Refill(address _owner, uint256 _amount, uint256 _totalAvailable);

@@ -5,16 +5,10 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract Token is ERC20 {
 
-    mapping(address => uint256) balances;
-
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        uint256 _totalSupply
-    )
-        ERC20(_name, _symbol)
+    constructor(string memory _name, string memory _symbol, uint256 _initialSupply)
         public
+        ERC20(_name, _symbol)
     {
-        balances[msg.sender] += _totalSupply;
+        _mint(msg.sender, _initialSupply);
     }
 }

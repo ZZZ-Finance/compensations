@@ -21,7 +21,7 @@ contract("Compensation", function (accounts) {
       this.token = await Token.new("Test Token", this.symbol, this.totalSupply);
 
       // Deploy compensation contract
-      this.compensation = await Compensation.new(this.token.address, this.totalSupply/5);
+      this.compensation = await Compensation.new(this.token.address);
     });
 
     it("should deploy and initialize the Compensation contract", async function () {

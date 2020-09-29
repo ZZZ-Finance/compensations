@@ -8,6 +8,6 @@ module.exports = function(deployer) {
     const token = await deployer.deploy(Token, "Test Token", "TEST", totalTokenSupply);
 
     // Deploy compensation contract
-    deployer.deploy(Compensation, token.address, totalTokenSupply/5);
+    deployer.deploy(Compensation, token.address);
   });
 };

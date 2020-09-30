@@ -294,11 +294,11 @@ contract("Compensation", function (accounts) {
       const initialUserBalances = await Promise.all(initialUserBalancesPromises);
 
       // Add all the whitelisted addresses and their corresponding claims
-      const whitelistingPromises = whiteListedUsers.map(async ([, userAddress]) => {
+      const whitelistingPromises = whiteListedUsers.map(async ([, userAddress]) => 
         await this.compensation.addAddressforCompensation(userAddress, this.totalClaimablePerUser, {
           from: owner
-        }).should.be.fulfilled;
-      })
+        }).should.be.fulfilled
+      )
 
       await Promise.all(whitelistingPromises);
 

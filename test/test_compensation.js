@@ -4,13 +4,11 @@ const Token = artifacts.require("Token");
 const Web3Utils = require("web3-utils");
 const BigNumber = web3.BigNumber;
 
-const chai = require("chai")
+require("chai")
+  .use(require("chai-as-promised"))
+  .use(require("chai-bignumber")(BigNumber))
+  .should();
   
-  
-chai.use(require("chai-as-promised")).use(require("chai-bignumber")(BigNumber)).should();
-
-let assert = chai.assert;
-
 contract("Compensation", function (accounts) {
   const owner = accounts[0];
 

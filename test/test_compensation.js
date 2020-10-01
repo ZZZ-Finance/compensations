@@ -4,10 +4,12 @@ const Token = artifacts.require("Token");
 const Web3Utils = require("web3-utils");
 const BigNumber = web3.BigNumber;
 
-require("chai")
-  .use(require("chai-as-promised"))
-  .use(require("chai-bignumber")(BigNumber))
-  .should();
+const chai = require("chai")
+  
+  
+chai.use(require("chai-as-promised")).use(require("chai-bignumber")(BigNumber)).should();
+
+let assert = chai.assert;
 
 contract("Compensation", function (accounts) {
   const owner = accounts[0];
@@ -104,11 +106,61 @@ contract("Compensation", function (accounts) {
       afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance + this.totalAvailableAmount);
       afterOwnerBalance.should.be.bignumber.equal(initialOwnerBalance - this.totalAvailableAmount);
     });
+
+    it("should allow owner to correct incorrect compensation amounts", async function () {
+       // Two people getting added 
+       const whiteListedUsers = [users.one, users.two];
+
+       const incorrectCompensationAmount = 1000;
+       const correctCompensationAmount = 500;
+
+       // Whoops we set up wrong amounts for users
+       const addCompensationPromises = whiteListedUsers.map(async (address, index) => await this.compensation.addAddressforCompensation(address, incorrectCompensationAmount, { from: owner}).should.be.fulfilled);
+       await Promise.all(addCompensationPromises);
+
+       // Get the claim limits for users
+       const inCorrectClaimAmountPromises = whiteListedUsers.map(async address => Number(await this.compensation.tokenClaimLimit.call(address)));
+       const inCorrectClaimAmounts = await Promise.all(inCorrectClaimAmountPromises);
+
+       // Make sure incorrect amounts are avalaible in the contract.
+       inCorrectClaimAmounts.forEach(claimAmount => claimAmount.should.be.equal(incorrectCompensationAmount));
+
+       // Can we fix the situation?
+       const fixCompensationPromises = whiteListedUsers.map(async address => await this.compensation.addAddressforCompensation(address, correctCompensationAmount, { from: owner}).should.be.fulfilled);
+       await Promise.all(fixCompensationPromises);
+
+      // Get the new claim limits
+      const correctClaimAmountPromises = whiteListedUsers.map(async address => Number(await this.compensation.tokenClaimLimit.call(address)));
+      const correctClaimAmounts = await Promise.all(correctClaimAmountPromises);
+
+      // Check if the limit got reduced
+      correctClaimAmounts.forEach(claimAmount => claimAmount.should.be.equal(correctCompensationAmount));
+
+    })
+
+    it("should not allow adding claims that overflow the contract balance", async function () {
+      const overflowingCompensationAmount = 3001;
+      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
+
+      // Make sure we are actually inserting a greater amount
+      overflowingCompensationAmount.should.be.greaterThan(initialTotalAvailableTokens);
+
+      //  Overflowing should not be supported if weighted % claiming is not available since it will lead to unfair distribution of tokens for a single compensation event.
+      //  TODO: To fix this issue we should only add compensation amounts for users according to the weighted % per event. (maybe this is the plan?)
+      //  TODO: Then the contract balance is never less than total claimables. 
+      //  TODO: OR make the test referenced below pass by implementing the functionality in the contract itself.
+      // -> Test in line 240 "should allow every user to claim with their weighted percentage".
+      await this.compensation.addAddressforCompensation(users.one, overflowingCompensationAmount, { from: owner}).should.not.be.fulfilled;
+
+      const userClaimAmount = await this.compensation.tokenClaimLimit.call(users.one);
+      userClaimAmount.should.be.equal(0);
+
+    })
   });
 
   describe("User interactions", function () {
     beforeEach(async function () {
-      this.totalAvailableAmount = 3000;
+      this.totalAvailableAmount = 6000;
       // This will only function if the result is a whole number.
       this.totalClaimablePerUser = this.totalAvailableAmount / amountOfUsers;
 
@@ -188,6 +240,96 @@ contract("Compensation", function (accounts) {
       afterUserBalance.should.be.bignumber.equal(initialUserBalance);
       afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens);
 
+    })
+
+    it("should allow every user to claim with their weighted percentage", async function () {
+      const totalCompensationAmount = 10000;
+      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
+      
+      // Make sure we have less funds than is promised for total compensation
+      initialTotalAvailableTokens.should.be.lessThan(totalCompensationAmount);
+
+      // Two users that make up the total amount.
+      const whiteListedUsersAndTheirCompensationAmounts = [{ address: users.one, compensation: 5000 }, { address: users.two, compensation: 5000 }]
+
+      const userWeightedPercentageAmounts = whiteListedUsersAndTheirCompensationAmounts.map(user => {
+        // Percentage of total claims that belong to this user
+        const userPercentage = user.compensation / totalCompensationAmount;
+        // Just a sanity check
+        userPercentage.should.be.lessThan(1).and.greaterThan(0);
+        // Amount in tokens
+        const weightedCompensation = initialTotalAvailableTokens * userPercentage;
+        weightedCompensation.should.be.lessThan(totalCompensationAmount);      
+        return {
+          address: user.address,
+          weightedCompensation
+        }
+      })
+
+      // Add the overflowing compensation amounts
+      const addCompensationPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address, compensation }) => await this.compensation.addAddressforCompensation(address, compensation, { from: owner}).should.be.fulfilled);
+
+      await Promise.all(addCompensationPromises);
+
+      // Get the new claim limits
+      const claimAmountPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address }) => Number(await this.compensation.tokenClaimLimit.call(address)));
+      const claimAmounts = await Promise.all(claimAmountPromises);
+
+
+      claimAmounts.forEach((claimAmount, index) => claimAmount.should.be.equal(whiteListedUsersAndTheirCompensationAmounts[index].compensation));
+
+      // Make the claims
+      const claimPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address }) => await this.compensation.claimCompensation({ from: address}).should.be.fulfilled);
+
+      const transactions = await Promise.all(claimPromises);
+
+      
+      const logs = transactions.map(tx => tx.logs);
+      
+      // Get the succesfull claim events
+      const claimEvents = logs.reduce((events, log) => {
+        if(log => log.find(e => e.event === 'Claim')) {
+          events.push(log);
+        } 
+        return events;
+      }, []).flatMap(e => e);
+
+      claimEvents.length.should.be.equal(2);
+
+      const leftOverClaimLimitPromises = claimEvents.map(async (claimEvent, index) => {
+        const userAddress = userWeightedPercentageAmounts[index].address;
+
+        // Claim event should have the receiver declared as the transaction initiator
+        claimEvent.args._receiver.should.be.equal(userAddress);
+
+        // Amount the user is able to claim this time so it's possible for every user to do their claims
+        const weightedAmountUserShouldBeAbleToClaim = userWeightedPercentageAmounts[index].weightedCompensation;
+
+        // Total amount to be claimed for this user
+        const totalAmountUserShouldBeAbleToClaim = whiteListedUsersAndTheirCompensationAmounts[index].compensation;
+
+        // Claim event should return less tokens than the user total compensation is since the contract does not have the full amount.
+        weightedAmountUserShouldBeAbleToClaim.should.be.lessThan(totalAmountUserShouldBeAbleToClaim)
+
+        // Initiator should have the claimed their corresponding weighted %;
+        Number(claimEvent.args._amount).should.be.bignumber.eql(weightedAmountUserShouldBeAbleToClaim, "Since this is failing, the user is not receiving the weighted percentage of contracts balance. The distribution won't be fair for a single compensation event.")
+        return {
+          address: userAddress,
+          leftOverClaimLimit: await this.compensation.tokenClaimLimit.call(userAddress)
+        }
+      })
+
+      const leftOverClaimLimitsForUser = await Promise.all(leftOverClaimLimitPromises);
+
+      leftOverClaimLimitsForUser.forEach((leftOverClaimLimitForUser, index) => {
+         // Amount the user is able to claim this time so it's possible for every user to do their claims
+         const weightedAmountUserShouldBeAbleToClaim = userWeightedPercentageAmounts[index].weightedCompensation;
+         // Total amount to be claimed for this user
+         const totalAmountUserShouldBeAbleToClaim = whiteListedUsersAndTheirCompensationAmounts[index].compensation;
+
+         // Left over claim limit should be reduced by weighted claim amoount.
+         leftOverClaimLimitForUser.should.be.bignumber.equal(totalAmountUserShouldBeAbleToClaim - weightedAmountUserShouldBeAbleToClaim);
+      })
     })
 
     it("should not allow one user to make claim more than once", async function () {

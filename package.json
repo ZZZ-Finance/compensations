@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test": "truffle test ./test_compensation.js"
+  },
   "dependencies": {
     "@openzeppelin/contracts": "^3.2.0",
     "bignumber.js": "^9.0.1",

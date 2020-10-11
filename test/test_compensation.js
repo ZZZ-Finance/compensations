@@ -1,6 +1,7 @@
 const Compensation = artifacts.require("Compensation");
 const Token = artifacts.require("Token");
 
+const { expect } = require("chai");
 const Web3Utils = require("web3-utils");
 const BigNumber = web3.BigNumber;
 
@@ -8,8 +9,96 @@ require("chai")
   .use(require("chai-as-promised"))
   .use(require("chai-bignumber")(BigNumber))
   .should();
-  
+
 contract("Compensation", function (accounts) {
+  class Helper {
+    constructor(totalNapsCompensation = "1100000000000000000000000") {
+      return (async () => {
+        this.token = await Token.new(
+          "Test Token",
+          "TEST",
+          "2100000000000000000000000"
+        );
+        this.owner = accounts[0];
+        this.contract = await Compensation.new(
+          this.token.address,
+          totalNapsCompensation,
+          "10",
+          { from: this.owner }
+        ).should.be.fulfilled;
+
+        await this.token.approve(this.contract.address, totalNapsCompensation, {
+          from: this.owner,
+        }).should.be.fulfilled;
+
+        return this;
+      })();
+    }
+
+    async refill() {
+      return await this.contract.refill({ from: owner }).should.be.fulfilled;
+    }
+
+    async getContractBalance() {
+      return Number(await this.token.balanceOf(this.contract.address));
+    }
+
+    async startNextRound() {
+      await this.contract.startnextround({
+        from: this.owner,
+      }).should.be.fulfilled;
+      return Number(await this.contract.currentRound());
+    }
+
+    async getTotalAvailableTokens() {
+      return Number(
+        await this.contract.totalAvailableTokens().should.be.fulfilled
+      );
+    }
+
+    async claimCompensation(user) {
+      return await this.contract.claimCompensation({ from: user });
+    }
+
+    async getCompensationPerRound() {
+      return Number(
+        await this.contract.compensationPerRound().should.be.fulfilled
+      );
+    }
+
+    async getUserRoundClaimable(user) {
+      const tokenClaimLimit = await this.tokenClaimLimit(user);
+      const totalRounds = await this.contract.totalRounds();
+      const currentRound = await this.contract.currentRound();
+      return (tokenClaimLimit / totalRounds) * currentRound;
+    }
+
+    async getCompensationRounds() {
+      return Number(await this.contract.totalRounds());
+    }
+
+    async tokenClaimLimit(user) {
+      return Number(await this.contract.tokenClaimLimit(user));
+    }
+    async tokensClaimed(user) {
+      return Number(await this.contract.tokensClaimed(user));
+    }
+
+    async currentRound() {
+      return Number(await this.contract.currentRound());
+    }
+
+    async getTotalCompensationAmount() {
+      return Number(await this.contract.totalTokensCompensation());
+    }
+
+    async addAddressforCompensation(user, amount) {
+      return await this.contract.addAddressforCompensation(user, amount, {
+        from: this.owner,
+      }).should.be.fulfilled;
+    }
+  }
+
   const owner = accounts[0];
 
   const users = {
@@ -18,377 +107,329 @@ contract("Compensation", function (accounts) {
     three: accounts[3],
     four: accounts[4],
     five: accounts[5],
-    six: accounts[6]
-  }
+    six: accounts[6],
+  };
 
   const amountOfUsers = Object.keys(users).length;
-
-  const CLAIM_ERROR_TEXT = "No claim available."
+  const CLAIM_ERROR_TEXT = "No claim available.";
 
   describe("deployment and initialization", function () {
     beforeEach(async function () {
-      // Deploy token
-      this.symbol = "TEST";
-      this.totalSupply = 10000000000;
-      this.token = await Token.new("Test Token", this.symbol, this.totalSupply);
-
-      // Deploy compensation contract
-      this.compensation = await Compensation.new(this.token.address);
+      this.helper = await new Helper();
     });
 
     it("should deploy and initialize the Compensation contract", async function () {
-      this.compensation.should.exist;
+      this.helper.contract.should.exist;
     });
   });
 
   describe("Owner interaction", function () {
     beforeEach(async function () {
-      this.totalAvailableAmount = 3000;
-      this.totalClaimablePerUser = 500;
-
-      // Deploy token
-      this.symbol = "TEST";
-      this.totalSupply = 10000000000;
-      this.token = await Token.new("Test Token", this.symbol, this.totalSupply, { from: owner });
-
-      // Deploy compensation contract
-      this.compensation = await Compensation.new(this.token.address, { from: owner });
+      this.roundNapAmount = "3000000000000";
+      this.helper = await new Helper();
     });
 
     it("should allow the owner to add compensation addresses", async function () {
+      const userClaimable = "214000000000";
       // Check the initial token claim limit
-      const initialTokenClaimLimit = Number(await this.compensation.tokenClaimLimit.call(users.one));
+      const initialTokenClaimLimit = await this.helper.tokenClaimLimit(
+        users.one
+      );
       initialTokenClaimLimit.should.be.bignumber.equal(0);
 
       // Add the address and compensation amount
-      await this.compensation.addAddressforCompensation(users.one, this.totalClaimablePerUser, {
-        from: owner
-      }).should.be.fulfilled;
+      await this.helper.addAddressforCompensation(users.one, userClaimable);
 
       // Confirm that the token claim limit has increased as expected
-      const newTokenClaimLimit = Number(await this.compensation.tokenClaimLimit.call(users.one));
-      newTokenClaimLimit.should.be.bignumber.equal(this.totalClaimablePerUser);
+      const newTokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
+      newTokenClaimLimit.should.be.bignumber.equal(userClaimable);
     });
 
     it("should allow the owner to refill the contract", async function () {
       // Load initial token amounts
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const initialCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      const initialOwnerBalance = Number(await this.token.balanceOf(owner));
+      const initialTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
+      const initialCompensationBalance = Number(
+        await this.helper.token.balanceOf(this.helper.contract.address)
+      );
 
-      // Approve tokens to the contract so that allowances enable refilling
-      await this.token.approve(this.compensation.address, this.totalAvailableAmount, {
-        from: owner
-      }).should.be.fulfilled;
+      initialCompensationBalance.should.equal(0);
+
+      const initialOwnerBalance = Number(
+        await this.helper.token.balanceOf(owner)
+      );
 
       // Refill the contract with tokens and get transaction logs
-      const { logs } = await this.compensation.refill(this.totalAvailableAmount, {
-        from: owner
-      }).should.be.fulfilled;
-
-      // Confirm that Refill event was logged with expected values
-      const refillEvent = logs.find(
-        e => e.event === "Refill"
-      );
-      refillEvent.args._owner.should.be.equal(owner);
-      Number(refillEvent.args._amount).should.be.bignumber.equal(this.totalAvailableAmount);
-      Number(refillEvent.args._totalAvailable).should.be.bignumber.equal(this.totalAvailableAmount);
+      await this.helper.refill();
 
       // Load current token balances
-      const afterTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const afterCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      const afterOwnerBalance = Number(await this.token.balanceOf(owner));
+      const afterTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
+      const afterCompensationBalance = await this.helper.getContractBalance();
+      const paymentPerRound = await this.helper.getCompensationPerRound();
+      const afterOwnerBalance = Number(
+        await this.helper.token.balanceOf(owner)
+      );
 
       // Check that token amounts have updated as expected
-      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens + this.totalAvailableAmount);
-      afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance + this.totalAvailableAmount);
-      afterOwnerBalance.should.be.bignumber.equal(initialOwnerBalance - this.totalAvailableAmount);
+      afterTotalAvailableTokens.should.be.bignumber.equal(
+        initialTotalAvailableTokens + paymentPerRound
+      );
+      afterCompensationBalance.should.be.bignumber.equal(
+        initialCompensationBalance + paymentPerRound
+      );
+      afterOwnerBalance.should.be.bignumber.equal(
+        initialOwnerBalance - paymentPerRound
+      );
     });
 
     it("should allow owner to correct incorrect compensation amounts", async function () {
-       // Two people getting added 
-       const whiteListedUsers = [users.one, users.two];
+      // Two people getting added
+      const whiteListedUsers = [users.one, users.two];
 
-       const incorrectCompensationAmount = 1000;
-       const correctCompensationAmount = 500;
+      const incorrectCompensationAmount = 1000;
+      const correctCompensationAmount = 500;
 
-       // Whoops we set up wrong amounts for users
-       const addCompensationPromises = whiteListedUsers.map(async (address, index) => await this.compensation.addAddressforCompensation(address, incorrectCompensationAmount, { from: owner}).should.be.fulfilled);
-       await Promise.all(addCompensationPromises);
+      // Whoops we set up wrong amounts for users
+      const addCompensationPromises = whiteListedUsers.map(
+        async (address) =>
+          await this.helper.addAddressforCompensation(
+            address,
+            incorrectCompensationAmount
+          )
+      );
+      await Promise.all(addCompensationPromises);
 
-       // Get the claim limits for users
-       const inCorrectClaimAmountPromises = whiteListedUsers.map(async address => Number(await this.compensation.tokenClaimLimit.call(address)));
-       const inCorrectClaimAmounts = await Promise.all(inCorrectClaimAmountPromises);
+      // Get the claim limits for users
+      const inCorrectClaimAmountPromises = whiteListedUsers.map(
+        async (address) => await this.helper.tokenClaimLimit(address)
+      );
+      const inCorrectClaimAmounts = await Promise.all(
+        inCorrectClaimAmountPromises
+      );
 
-       // Make sure incorrect amounts are avalaible in the contract.
-       inCorrectClaimAmounts.forEach(claimAmount => claimAmount.should.be.equal(incorrectCompensationAmount));
+      // Make sure incorrect amounts are avalaible in the contract.
+      inCorrectClaimAmounts.forEach((claimAmount) =>
+        claimAmount.should.be.equal(incorrectCompensationAmount)
+      );
 
-       // Can we fix the situation?
-       const fixCompensationPromises = whiteListedUsers.map(async address => await this.compensation.addAddressforCompensation(address, correctCompensationAmount, { from: owner}).should.be.fulfilled);
-       await Promise.all(fixCompensationPromises);
+      // Can we fix the situation?
+      const fixCompensationPromises = whiteListedUsers.map(
+        async (address) =>
+          await this.helper.addAddressforCompensation(
+            address,
+            correctCompensationAmount
+          )
+      );
+      await Promise.all(fixCompensationPromises);
 
       // Get the new claim limits
-      const correctClaimAmountPromises = whiteListedUsers.map(async address => Number(await this.compensation.tokenClaimLimit.call(address)));
+      const correctClaimAmountPromises = whiteListedUsers.map(
+        async (address) => await this.helper.tokenClaimLimit(address)
+      );
       const correctClaimAmounts = await Promise.all(correctClaimAmountPromises);
 
       // Check if the limit got reduced
-      correctClaimAmounts.forEach(claimAmount => claimAmount.should.be.equal(correctCompensationAmount));
-
-    })
-
-    it("should not allow adding claims that overflow the contract balance", async function () {
-      const overflowingCompensationAmount = 3001;
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-
-      // Make sure we are actually inserting a greater amount
-      overflowingCompensationAmount.should.be.greaterThan(initialTotalAvailableTokens);
-
-      //  Overflowing should not be supported if weighted % claiming is not available since it will lead to unfair distribution of tokens for a single compensation event.
-      //  TODO: To fix this issue we should only add compensation amounts for users according to the weighted % per event. (maybe this is the plan?)
-      //  TODO: Then the contract balance is never less than total claimables. 
-      //  TODO: OR make the test referenced below pass by implementing the functionality in the contract itself.
-      // -> Test in line 240 "should allow every user to claim with their weighted percentage".
-      await this.compensation.addAddressforCompensation(users.one, overflowingCompensationAmount, { from: owner}).should.not.be.fulfilled;
-
-      const userClaimAmount = await this.compensation.tokenClaimLimit.call(users.one);
-      userClaimAmount.should.be.equal(0);
-
-    })
+      correctClaimAmounts.forEach((claimAmount) =>
+        claimAmount.should.be.equal(correctCompensationAmount)
+      );
+    });
   });
 
   describe("User interactions", function () {
     beforeEach(async function () {
-      this.totalAvailableAmount = 6000;
-      // This will only function if the result is a whole number.
-      this.totalClaimablePerUser = this.totalAvailableAmount / amountOfUsers;
-
-      // Deploy token
-      this.symbol = "TEST";
-      this.totalSupply = 10000000000;
-      this.token = await Token.new("Test Token", this.symbol, this.totalSupply, { from: owner });
-
-      // Deploy compensation contract
-      this.compensation = await Compensation.new(this.token.address, { from: owner });
-
-      // Approve tokens to the contract so that allowances enable refilling
-      await this.token.approve(this.compensation.address, this.totalAvailableAmount, {
-        from: owner
-      }).should.be.fulfilled;
-
-      // Refill the contract with tokens
-      await this.compensation.refill(this.totalAvailableAmount, {
-        from: owner
-      }).should.be.fulfilled;
-
+      this.helper = await new Helper();
     });
 
-    it("should allow white-listed user to make compensation claim", async function () {
+    it("should not allow claims before round started", async function () {
+      const overflowingCompensationAmount = 1;
+      const initialTotalAvailableTokens = await this.helper.getContractBalance();
 
-      // Add the address and compensation amount
-      await this.compensation.addAddressforCompensation(users.one, this.totalClaimablePerUser, {
-        from: owner
-      });
-
-      // Load initial contract values
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const initialUserTokensClaimed = Number(await this.compensation.tokensClaimed.call(users.one));
-      // Load initial balances
-      const initialCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      const initialUserBalance = Number(await this.token.balanceOf(users.one));
-
-      // Get the logs of a user generated compensation claim transaction
-      const { logs } = await this.compensation.claimCompensation({ from: users.one}).should.be.fulfilled;
-
-      // Confirm that claim event was logged with expected values
-      const claimEvent = logs.find(
-        e => e.event === "Claim"
+      // Make sure we are actually inserting a greater amount
+      overflowingCompensationAmount.should.be.greaterThan(
+        initialTotalAvailableTokens
       );
-      claimEvent.args._receiver.should.be.equal(users.one);
-      Number(claimEvent.args._amount).should.be.bignumber.equal(this.totalClaimablePerUser);
 
-      // Load after contract values
-      const afterTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const afterUserTokensClaimed = Number(await this.compensation.tokensClaimed.call(users.one));
-      // Load after balances
-      const afterCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      const afterUserBalance = Number(await this.token.balanceOf(users.one));
+      await this.helper.addAddressforCompensation(
+        users.one,
+        overflowingCompensationAmount
+      );
 
-      // Check that contract values have updated as expected
-      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens - this.totalClaimablePerUser);
-      afterUserTokensClaimed.should.be.bignumber.equal(initialUserTokensClaimed + this.totalClaimablePerUser);
-      // Check that balances have updated as expected
-      afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance - this.totalClaimablePerUser);
-      afterUserBalance.should.be.bignumber.equal(initialUserBalance + this.totalClaimablePerUser);
+      await this.helper.claimCompensation(users.one).should.not.be.fulfilled;
+    });
+
+    it("should allow claims and update balances correctly for multiple rounds", async function () {
+      const compensationAmount = "3500000000000";
+      await this.helper.addAddressforCompensation(
+        users.one,
+        compensationAmount
+      );
+
+      const tokensClaimedByUser = await this.helper.tokensClaimed(users.one);
+      const tokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
+      tokenClaimLimit.should.equal(parseInt(compensationAmount));
+      tokensClaimedByUser.should.equal(0);
+      await this.helper.startNextRound();
+      await this.helper.claimCompensation(users.one).should.be.fulfilled;
+      const userBalance = Number(await this.helper.token.balanceOf(users.one));
+      userBalance.should.equal(
+        await this.helper.getUserRoundClaimable(users.one)
+      );
+
+      const tokensClaimedByUserAfterFirstRound = await this.helper.tokensClaimed(
+        users.one
+      );
+      tokensClaimedByUserAfterFirstRound.should.equal(userBalance);
+      // Do another round
+      await this.helper.startNextRound();
+      await this.helper.claimCompensation(users.one).should.be.fulfilled;
+
+      const userBalanceAfterSecondRound = Number(
+        await this.helper.token.balanceOf(users.one)
+      );
+      userBalanceAfterSecondRound.should.equal(userBalance * 2);
     });
 
     it("should not allow non white-listed user to claim", async function () {
+      const initialUserBalance = Number(
+        await this.helper.token.balanceOf(users.one)
+      );
 
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-
-      const initialUserBalance = Number(await this.token.balanceOf(users.one));
-
+      await this.helper.startNextRound();
+      const roundBalance = await this.helper.getContractBalance();
       // Try to claim from the contract
-      const event = await this.compensation.claimCompensation({ from: users.one}).should.not.be.fulfilled;
+      const event = await this.helper.claimCompensation(users.one).should.not.be
+        .fulfilled;
 
       event.reason.should.be.equal(CLAIM_ERROR_TEXT);
 
-      const afterUserBalance = Number(await this.token.balanceOf(users.one));
-      const afterTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
+      const afterUserBalance = Number(
+        await this.helper.token.balanceOf(users.one)
+      );
+      const afterTotalAvailableTokens = await this.helper.getContractBalance();
 
       afterUserBalance.should.be.bignumber.equal(initialUserBalance);
-      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens);
+      afterTotalAvailableTokens.should.be.bignumber.equal(roundBalance);
+    });
 
-    })
-
-    it("should allow every user to claim with their weighted percentage", async function () {
-      const totalCompensationAmount = 10000;
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      
-      // Make sure we have less funds than is promised for total compensation
-      initialTotalAvailableTokens.should.be.lessThan(totalCompensationAmount);
-
+    it("should allow multiple users to claim ", async function () {
       // Two users that make up the total amount.
-      const whiteListedUsersAndTheirCompensationAmounts = [{ address: users.one, compensation: 5000 }, { address: users.two, compensation: 5000 }]
-
-      const userWeightedPercentageAmounts = whiteListedUsersAndTheirCompensationAmounts.map(user => {
-        // Percentage of total claims that belong to this user
-        const userPercentage = user.compensation / totalCompensationAmount;
-        // Just a sanity check
-        userPercentage.should.be.lessThan(1).and.greaterThan(0);
-        // Amount in tokens
-        const weightedCompensation = initialTotalAvailableTokens * userPercentage;
-        weightedCompensation.should.be.lessThan(totalCompensationAmount);      
-        return {
-          address: user.address,
-          weightedCompensation
-        }
-      })
+      const claimers = [
+        { address: users.one, compensation: 500000000 },
+        { address: users.two, compensation: 500000000 },
+      ];
 
       // Add the overflowing compensation amounts
-      const addCompensationPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address, compensation }) => await this.compensation.addAddressforCompensation(address, compensation, { from: owner}).should.be.fulfilled);
+      const addCompensationPromises = claimers.map(
+        async ({ address, compensation }) =>
+          await this.helper.addAddressforCompensation(address, compensation)
+      );
 
       await Promise.all(addCompensationPromises);
 
+      // Start a round
+      await this.helper.startNextRound();
       // Get the new claim limits
-      const claimAmountPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address }) => Number(await this.compensation.tokenClaimLimit.call(address)));
+      const claimAmountPromises = claimers.map(async ({ address }) =>
+        Number(await this.helper.contract.tokenClaimLimit(address))
+      );
       const claimAmounts = await Promise.all(claimAmountPromises);
 
-
-      claimAmounts.forEach((claimAmount, index) => claimAmount.should.be.equal(whiteListedUsersAndTheirCompensationAmounts[index].compensation));
+      claimAmounts.forEach((claimAmount, index) =>
+        claimAmount.should.be.equal(claimers[index].compensation)
+      );
 
       // Make the claims
-      const claimPromises = whiteListedUsersAndTheirCompensationAmounts.map(async ({ address }) => await this.compensation.claimCompensation({ from: address}).should.be.fulfilled);
+      const claimPromises = claimers.map(
+        async ({ address }) =>
+          await this.helper.claimCompensation(address).should.be.fulfilled
+      );
 
       const transactions = await Promise.all(claimPromises);
 
-      
-      const logs = transactions.map(tx => tx.logs);
-      
+      const logs = transactions.map((tx) => tx.logs);
+
       // Get the succesfull claim events
-      const claimEvents = logs.reduce((events, log) => {
-        if(log => log.find(e => e.event === 'Claim')) {
-          events.push(log);
-        } 
-        return events;
-      }, []).flatMap(e => e);
+      const claimEvents = logs
+        .reduce((events, log) => {
+          if ((log) => log.find((e) => e.event === "Claim")) {
+            events.push(log);
+          }
+          return events;
+        }, [])
+        .flatMap((e) => e);
 
       claimEvents.length.should.be.equal(2);
-
-      const leftOverClaimLimitPromises = claimEvents.map(async (claimEvent, index) => {
-        const userAddress = userWeightedPercentageAmounts[index].address;
-
-        // Claim event should have the receiver declared as the transaction initiator
-        claimEvent.args._receiver.should.be.equal(userAddress);
-
-        // Amount the user is able to claim this time so it's possible for every user to do their claims
-        const weightedAmountUserShouldBeAbleToClaim = userWeightedPercentageAmounts[index].weightedCompensation;
-
-        // Total amount to be claimed for this user
-        const totalAmountUserShouldBeAbleToClaim = whiteListedUsersAndTheirCompensationAmounts[index].compensation;
-
-        // Claim event should return less tokens than the user total compensation is since the contract does not have the full amount.
-        weightedAmountUserShouldBeAbleToClaim.should.be.lessThan(totalAmountUserShouldBeAbleToClaim)
-
-        // Initiator should have the claimed their corresponding weighted %;
-        Number(claimEvent.args._amount).should.be.bignumber.eql(weightedAmountUserShouldBeAbleToClaim, "Since this is failing, the user is not receiving the weighted percentage of contracts balance. The distribution won't be fair for a single compensation event.")
-        return {
-          address: userAddress,
-          leftOverClaimLimit: await this.compensation.tokenClaimLimit.call(userAddress)
-        }
-      })
-
-      const leftOverClaimLimitsForUser = await Promise.all(leftOverClaimLimitPromises);
-
-      leftOverClaimLimitsForUser.forEach((leftOverClaimLimitForUser, index) => {
-         // Amount the user is able to claim this time so it's possible for every user to do their claims
-         const weightedAmountUserShouldBeAbleToClaim = userWeightedPercentageAmounts[index].weightedCompensation;
-         // Total amount to be claimed for this user
-         const totalAmountUserShouldBeAbleToClaim = whiteListedUsersAndTheirCompensationAmounts[index].compensation;
-
-         // Left over claim limit should be reduced by weighted claim amoount.
-         leftOverClaimLimitForUser.should.be.bignumber.equal(totalAmountUserShouldBeAbleToClaim - weightedAmountUserShouldBeAbleToClaim);
-      })
-    })
+    });
 
     it("should not allow one user to make claim more than once", async function () {
-
+      const compensationAmount = "35015030510";
       // Add the address and compensation amount
-      await this.compensation.addAddressforCompensation(users.one, this.totalClaimablePerUser, {
-        from: owner
-      });
-      
+      await this.helper.addAddressforCompensation(
+        users.one,
+        compensationAmount
+      );
+
       // Just for fun make the claim amount dynamic
       const MIN_CLAIMS = 2;
       const MAX_CLAIMS = 12;
-      const ITERATION_AMOUNT = Math.floor(Math.random() * (MAX_CLAIMS - MIN_CLAIMS + 1)) + MIN_CLAIMS;
+      const ITERATION_AMOUNT =
+        Math.floor(Math.random() * (MAX_CLAIMS - MIN_CLAIMS + 1)) + MIN_CLAIMS;
+
+      await this.helper.startNextRound();
 
       // Get initial contract state
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const initialCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      
-      // Get initial user state 
-      const initialUserTokensClaimed = Number(await this.compensation.tokensClaimed.call(users.one));
-      const initialUserBalance = Number(await this.token.balanceOf(users.one));
+      const initialContractBalance = await this.helper.getContractBalance();
+
+      // Initial use state
+      const initialUserTokensClaimed = await this.helper.tokensClaimed(
+        users.one
+      );
+      const initialUserBalance = Number(
+        await this.helper.token.balanceOf(users.one)
+      );
 
       // Generate an array from the random number.
       const claimIterations = Array.from(Array(ITERATION_AMOUNT).keys());
 
       // Call claim in the range of MIN_CLAIMS - MAX-CLAIMS
-      const transactionPromises = claimIterations.map(async (iteration) => { 
+      const transactionPromises = claimIterations.map(async (iteration) => {
         if (iteration === 0) {
-          return await this.compensation.claimCompensation({ from: users.one}).should.be.fulfilled; 
+          return await this.helper.claimCompensation(users.one).should.be
+            .fulfilled;
         } else {
-          return await this.compensation.claimCompensation({ from: users.one}).should.not.be.fulfilled; 
+          return await this.helper.claimCompensation(users.one).should.not.be
+            .fulfilled;
         }
-      })
+      });
 
       const transactions = await Promise.all(transactionPromises);
 
       // Insert logs of the succesfull events, for rejected transactions just push the object for later parsing.
-      const events = transactions.filter(Boolean).reduce((events, currentTx) => {
-        if(currentTx.logs) {
-          events.push(currentTx.logs.find(e => e.event === "Claim"));
-        } else {
-          events.push(currentTx);
-        }
-        return events;
-      }, [])
+      const events = transactions
+        .filter(Boolean)
+        .reduce((events, currentTx) => {
+          if (currentTx.logs) {
+            events.push(currentTx.logs.find((e) => e.event === "Claim"));
+          } else {
+            events.push(currentTx);
+          }
+          return events;
+        }, []);
 
       // Events should be the length of the random claim amounts
       events.length.should.be.equal(claimIterations.length);
 
       // Get the total amount of succesfull claims
-      const claimEvents = events.filter(
-        e => e.event === "Claim"
-      );
+      const claimEvents = events.filter((e) => e.event === "Claim");
 
       // And the amount of rejected transactions.
       const errorEvents = events.filter(
-        e =>  !e.transactionHash && e.reason.includes(CLAIM_ERROR_TEXT)
+        (e) => !e.transactionHash && e.reason.includes(CLAIM_ERROR_TEXT)
       );
 
       // Make sure error events are actually less than the original claim count since one should succeed.
-      errorEvents.length.should.be.equal(claimIterations.length - claimEvents.length);
+      errorEvents.length.should.be.equal(
+        claimIterations.length - claimEvents.length
+      );
 
       // We should only have one succesfull claim event
       claimEvents.length.should.be.equal(1);
@@ -400,77 +441,77 @@ contract("Compensation", function (accounts) {
       claimEvent.args._receiver.should.be.equal(users.one);
 
       // Initiator should have the claimable amount of a single transaction.
-      Number(claimEvent.args._amount).should.be.bignumber.equal(this.totalClaimablePerUser);
+      const claimAmountPerRound = await this.helper.getUserRoundClaimable(
+        users.one
+      );
+      Number(claimEvent.args._amount).should.be.bignumber.equal(
+        claimAmountPerRound
+      );
 
       // Load after contract state
-      const afterTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
-      const afterUserTokensClaimed = Number(await this.compensation.tokensClaimed.call(users.one));
+      const afterUserTokensClaimed = await this.helper.tokensClaimed(users.one);
 
       // Load after user state
-      const afterCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      const afterUserBalance = Number(await this.token.balanceOf(users.one));
+      const afterCompensationBalance = await this.helper.getContractBalance();
+
+      const afterUserBalance = Number(
+        await this.helper.token.balanceOf(users.one)
+      );
 
       // Check that contract state has updated as expected
-      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens - this.totalClaimablePerUser);
-      afterUserTokensClaimed.should.be.bignumber.equal(initialUserTokensClaimed + this.totalClaimablePerUser);
+      afterCompensationBalance.should.be.bignumber.equal(
+        initialContractBalance - claimAmountPerRound
+      );
+      afterUserTokensClaimed.should.be.bignumber.equal(
+        initialUserTokensClaimed + claimAmountPerRound
+      );
+      afterUserBalance.should.be.bignumber.equal(
+        initialUserBalance + claimAmountPerRound
+      );
+    });
 
-      // Check that user state has updated as expected
-      afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance - this.totalClaimablePerUser);
-      afterUserBalance.should.be.bignumber.equal(initialUserBalance + this.totalClaimablePerUser);
-    })
+    it.only("should empty the whole comp fund", async function () {
+      const claimers = [
+        { user: accounts[1], claimable: "200000000000000000000000" },
+        { user: accounts[2], claimable: "200000000000000000000000" },
+        { user: accounts[3], claimable: "200000000000000000000000" },
+        { user: accounts[4], claimable: "200000000000000000000000" },
+        { user: accounts[5], claimable: "200000000000000000000000" },
+        { user: accounts[6], claimable: "100000000000000000000000" },
+      ];
 
-    it("should distribute rewards to multiple users", async function () {
+      const totalClaimables = claimers.reduce(
+        (acc, curr) => acc + parseInt(curr.claimable),
+        0
+      );
 
-      // Generate an array for ease-of-access later on
-      const whiteListedUsers = Object.entries(users);
+      const totalCompensationAmount = await this.helper.getTotalCompensationAmount();
+      totalClaimables.should.equal(totalCompensationAmount);
 
-      const initialTotalAvailableTokens = Number(await this.compensation.totalAvailableTokens.call());
+      const totalRounds = await this.helper.getCompensationRounds();
+      claimers.map(({ user, claimable }) =>
+        this.helper.addAddressforCompensation(user, claimable)
+      );
 
-      // Fetch the initial state for the users who are claiming
-      const initialUserTokensClaimedForUsersPromises = whiteListedUsers.map(async ([user, userAddress]) => ({ [user]: Number(await this.compensation.tokensClaimed.call(userAddress)) }));
-      const initialUserBalancesPromises = whiteListedUsers.map(async ([user, userAddress]) => ({ [user]: Number(await this.token.balanceOf(userAddress))}));
+      for (let i = 0; i < totalRounds; i++) {
+        await this.helper.startNextRound();
+        const claimPromises = claimers.map(
+          ({ user }) => this.helper.claimCompensation(user).should.be.fulfilled
+        );
+        await Promise.all(claimPromises);
+      }
 
-      const initialUserTokensClaimedForUsers = await Promise.all(initialUserTokensClaimedForUsersPromises);
-      const initialUserBalances = await Promise.all(initialUserBalancesPromises);
+      const contractBalanceAfterClaims = await this.helper.getContractBalance();
+      contractBalanceAfterClaims.should.equal(0);
 
-      // Add all the whitelisted addresses and their corresponding claims
-      const whitelistingPromises = whiteListedUsers.map(async ([, userAddress]) => 
-        await this.compensation.addAddressforCompensation(userAddress, this.totalClaimablePerUser, {
-          from: owner
-        }).should.be.fulfilled
-      )
+      const promises = claimers.map(async ({ user }) => {
+        return Number(await this.helper.token.balanceOf(user));
+      });
+      const userBalances = await Promise.all(promises);
 
-      await Promise.all(whitelistingPromises);
-
-      // Make the claims
-      const claimPromises = whiteListedUsers.map(async ([, userAddress]) => await this.compensation.claimCompensation({ from: userAddress}).should.be.fulfilled);
-      
-      const transactions = await Promise.all(claimPromises);
-
-      // Get each claim event
-      const claimEvents = transactions.filter(tx => !!tx.logs.find(e => e.event === "Claim"));
-
-      // Should equal the amount of whitelisted users
-      claimEvents.length.should.be.equal(whiteListedUsers.length);
-
-      // Make sure we drained the fund accordingly
-      const afterCompensationBalance = Number(await this.token.balanceOf(this.compensation.address));
-      afterCompensationBalance.should.be.bignumber.equal(initialTotalAvailableTokens - (this.totalClaimablePerUser * amountOfUsers));
-
-      // Check the balances after transactions
-      whiteListedUsers.forEach(async ([user, userAddress]) => {
-        const initialUserTokensClaimed = initialUserTokensClaimedForUsers.find(entry => !!entry[user]);
-        const afterUserTokensClaimed = Number(await this.compensation.tokensClaimed.call(userAddress));
-  
-        // Make sure contract state is kept in track with earlier token claims.
-        afterUserTokensClaimed.should.be.bignumber.equal(initialUserTokensClaimed + this.totalClaimablePerUser);
-  
-        const initialUserBalance = initialUserBalances.find(entry => !!entry[user]);
-        const afterUserBalance = Number(await this.token.balanceOf(userAddress));
-  
-        // Check that the account balance is increased equally to the claim amount.
-        afterUserBalance.should.be.bignumber.equal(initialUserBalance + this.totalClaimablePerUser);
-      })
-    })
+      userBalances.forEach((balance, index) => {
+        balance.should.equal(parseInt(claimers[index].claimable));
+      });
+    });
   });
 });

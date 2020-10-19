@@ -23,7 +23,7 @@ Testing coverage can be found in the `test` folder and the contracts, well in th
 
 You can run the test suite yourself by:
 
-`git clone https://github.com/poptardd/compensations.git`  
+`git clone git@github.com:ZZZ-Finance/compensations.git`  
 `cd compensations`  
 `yarn`  
 

@@ -4,15 +4,18 @@
 
 Total contract is initialized the number value of NAP (not with the actual tokens) to be compensated and the number of compensation rounds to distribute them.
 
-A single round will not have the total amount of NAP to be compensated.  
-Instead starting a compensation round will require the following NAP amount `total naps to be compensated / compensation rounds` to be sent to the contract.
+After the contract is deployed, the `addAddressforCompensation` function should be called to input addresses that are due compensation, as well as the total amount of compensation for that address.
+
+The total compensation per round is determined by number of NAP divided by the number of rounds. The amount an address can claim each round is determined by their total compensation amount, divided by the total number of rounds, multiplied by the current round and subtracting any claims already made.
+
+Once all addresses have been input, the amount of compensation NAP should be sent to the contract - make sure this is the amount input initially in the constructor. After this, calling the `startnextround` function will unlock the first round of compensation.
 
 ## An example:
 
 Total compensation rounds: <b>10</b>  
 Total NAP to be compensated: <b>1100000</b>
 
-Triggering a round will transfer <b>110000</b> NAP to the contract and users will be given rights to call the `claimCompensation` function once.  
+Triggering a round will unlock <b>110000</b> NAP, allowing users to call the `claimCompensation` function once.  
 User will receive 10% of their total NAP compensation per round in this case.
 
 Triggering another round will repeat the pattern.

@@ -329,7 +329,6 @@ contract Compensation is Ownable {
         address _address,
         uint256 _totalCompensationAmount
     ) public onlyOwner {
-        require(tokenClaimLimit[_address] == 0, "Address has already been added for compensation.");
         tokenClaimLimit[_address] = _totalCompensationAmount;
     }
 
@@ -345,7 +344,6 @@ contract Compensation is Ownable {
         require(_addresses.length == _totalCompensationAmounts.length, "Length of 2 arrays must be the same.");
         uint8 i = 0;
         for (i; i < _addresses.length; i++) {
-            require(tokenClaimLimit[_addresses[i]] == 0, "Address has already been added for compensation.");
             tokenClaimLimit[_addresses[i]] = _totalCompensationAmounts[i];
         }
     } 

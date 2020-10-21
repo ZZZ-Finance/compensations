@@ -95,7 +95,17 @@ contract("Compensation", function (accounts) {
     async addAddressforCompensation(user, amount) {
       return await this.contract.addAddressforCompensation(user, amount, {
         from: this.owner,
-      }).should.be.fulfilled;
+      });
+    }
+
+    async addMultipleAddressesforCompensation(users, amounts) {
+      return await this.contract.addMultipleAddressesforCompensation(
+        users,
+        amounts,
+        {
+          from: this.owner,
+        }
+      );
     }
   }
 
@@ -112,6 +122,8 @@ contract("Compensation", function (accounts) {
 
   const amountOfUsers = Object.keys(users).length;
   const CLAIM_ERROR_TEXT = "No claim available.";
+  const MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT =
+    "Length of 2 arrays must be the same.";
 
   describe("deployment and initialization", function () {
     beforeEach(async function () {
@@ -138,7 +150,10 @@ contract("Compensation", function (accounts) {
       initialTokenClaimLimit.should.be.bignumber.equal(0);
 
       // Add the address and compensation amount
-      await this.helper.addAddressforCompensation(users.one, userClaimable);
+      await this.helper.addAddressforCompensation(
+        users.one,
+        userClaimable
+      ).should.be.fulfilled;
 
       // Confirm that the token claim limit has increased as expected
       const newTokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
@@ -194,7 +209,7 @@ contract("Compensation", function (accounts) {
           await this.helper.addAddressforCompensation(
             address,
             incorrectCompensationAmount
-          )
+          ).should.be.fulfilled
       );
       await Promise.all(addCompensationPromises);
 
@@ -217,7 +232,7 @@ contract("Compensation", function (accounts) {
           await this.helper.addAddressforCompensation(
             address,
             correctCompensationAmount
-          )
+          ).should.be.fulfilled
       );
       await Promise.all(fixCompensationPromises);
 
@@ -237,6 +252,30 @@ contract("Compensation", function (accounts) {
   describe("User interactions", function () {
     beforeEach(async function () {
       this.helper = await new Helper();
+    });
+
+    it.only("should allow adding the multiple addresses at the same time", async function () {
+      const _addresses = [users.one, users.two];
+      const _amounts = [100, 200];
+
+      await this.helper.addMultipleAddressesforCompensation(
+        _addresses,
+        _amounts
+      ).should.be.fulfilled;
+    });
+
+    it("should not allow adding the multiple addresses when any array is missing one or more items", async function () {
+      const _addresses = [users.one, users.two, users.three];
+      const _amounts = [100, 200];
+
+      const event = await this.helper.addMultipleAddressesforCompensation(
+        _addresses,
+        _amounts
+      ).should.not.be.fulfilled;
+
+      event.reason.should.be.equal(
+        MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT
+      );
     });
 
     it("should not allow claims before round started", async function () {
@@ -470,7 +509,7 @@ contract("Compensation", function (accounts) {
       );
     });
 
-    it.only("should empty the whole comp fund", async function () {
+    it("should empty the whole comp fund", async function () {
       const claimers = [
         { user: accounts[1], claimable: "200000000000000000000000" },
         { user: accounts[2], claimable: "200000000000000000000000" },

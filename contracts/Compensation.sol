@@ -333,6 +333,22 @@ contract Compensation is Ownable {
     }
 
     /**
+     * @dev adds multiple addresses for compensation
+     * @param _addresses array of address is the addresses to be compensated
+     * @param _totalCompensationAmounts array of uint256 is the total amounts of tokens claimable by these addresses
+     */
+    function addMultipleAddressesforCompensation(
+        address[] memory _addresses,
+        uint256[] memory _totalCompensationAmounts
+    ) public onlyOwner {
+        require(_addresses.length == _totalCompensationAmounts.length, "Length of 2 arrays must be the same.");
+        uint8 i = 0;
+        for (i; i < _addresses.length; i++) {
+            tokenClaimLimit[_addresses[i]] = _totalCompensationAmounts[i];
+        }
+    } 
+
+    /**
      * @dev enables claims of available tokens as compensation
      */
     function claimCompensation() public {

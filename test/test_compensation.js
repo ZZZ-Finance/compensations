@@ -4,28 +4,18 @@ const Token = artifacts.require("Token");
 const { expect } = require("chai");
 const Web3Utils = require("web3-utils");
 const BigNumber = web3.BigNumber;
+const { addresses, amounts } = require("./data");
 
-require("chai")
-  .use(require("chai-as-promised"))
-  .use(require("chai-bignumber")(BigNumber))
-  .should();
+require("chai").use(require("chai-as-promised")).use(require("chai-bignumber")(BigNumber)).should();
 
 contract("Compensation", function (accounts) {
   class Helper {
-    constructor(totalNapsCompensation = "1100000000000000000000000") {
+    constructor(totalNapsCompensation = web3.utils.toWei("1135400")) {
       return (async () => {
-        this.token = await Token.new(
-          "Test Token",
-          "TEST",
-          "2100000000000000000000000"
-        );
+        this.token = await Token.new("Test Token", "TEST", web3.utils.toWei("1136400"));
         this.owner = accounts[0];
-        this.contract = await Compensation.new(
-          this.token.address,
-          totalNapsCompensation,
-          "10",
-          { from: this.owner }
-        ).should.be.fulfilled;
+        this.contract = await Compensation.new(this.token.address, totalNapsCompensation, 10, { from: this.owner }).should.be
+          .fulfilled;
 
         await this.token.approve(this.contract.address, totalNapsCompensation, {
           from: this.owner,
@@ -51,9 +41,7 @@ contract("Compensation", function (accounts) {
     }
 
     async getTotalAvailableTokens() {
-      return Number(
-        await this.contract.totalAvailableTokens().should.be.fulfilled
-      );
+      return Number(await this.contract.totalAvailableTokens().should.be.fulfilled);
     }
 
     async claimCompensation(user) {
@@ -61,9 +49,7 @@ contract("Compensation", function (accounts) {
     }
 
     async getCompensationPerRound() {
-      return Number(
-        await this.contract.compensationPerRound().should.be.fulfilled
-      );
+      return Number(await this.contract.compensationPerRound().should.be.fulfilled);
     }
 
     async getUserRoundClaimable(user) {
@@ -99,13 +85,9 @@ contract("Compensation", function (accounts) {
     }
 
     async addMultipleAddressesforCompensation(users, amounts) {
-      return await this.contract.addMultipleAddressesforCompensation(
-        users,
-        amounts,
-        {
-          from: this.owner,
-        }
-      );
+      return await this.contract.addMultipleAddressesforCompensation(users, amounts, {
+        from: this.owner,
+      });
     }
   }
 
@@ -122,8 +104,7 @@ contract("Compensation", function (accounts) {
 
   const amountOfUsers = Object.keys(users).length;
   const CLAIM_ERROR_TEXT = "No claim available.";
-  const MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT =
-    "Length of 2 arrays must be the same.";
+  const MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT = "Length of 2 arrays must be the same.";
 
   describe("deployment and initialization", function () {
     beforeEach(async function () {
@@ -144,16 +125,11 @@ contract("Compensation", function (accounts) {
     it("should allow the owner to add compensation addresses", async function () {
       const userClaimable = "214000000000";
       // Check the initial token claim limit
-      const initialTokenClaimLimit = await this.helper.tokenClaimLimit(
-        users.one
-      );
+      const initialTokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
       initialTokenClaimLimit.should.be.bignumber.equal(0);
 
       // Add the address and compensation amount
-      await this.helper.addAddressforCompensation(
-        users.one,
-        userClaimable
-      ).should.be.fulfilled;
+      await this.helper.addAddressforCompensation(users.one, userClaimable).should.be.fulfilled;
 
       // Confirm that the token claim limit has increased as expected
       const newTokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
@@ -163,15 +139,11 @@ contract("Compensation", function (accounts) {
     it("should allow the owner to refill the contract", async function () {
       // Load initial token amounts
       const initialTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
-      const initialCompensationBalance = Number(
-        await this.helper.token.balanceOf(this.helper.contract.address)
-      );
+      const initialCompensationBalance = Number(await this.helper.token.balanceOf(this.helper.contract.address));
 
       initialCompensationBalance.should.equal(0);
 
-      const initialOwnerBalance = Number(
-        await this.helper.token.balanceOf(owner)
-      );
+      const initialOwnerBalance = Number(await this.helper.token.balanceOf(owner));
 
       // Refill the contract with tokens and get transaction logs
       await this.helper.refill();
@@ -180,20 +152,12 @@ contract("Compensation", function (accounts) {
       const afterTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
       const afterCompensationBalance = await this.helper.getContractBalance();
       const paymentPerRound = await this.helper.getCompensationPerRound();
-      const afterOwnerBalance = Number(
-        await this.helper.token.balanceOf(owner)
-      );
+      const afterOwnerBalance = Number(await this.helper.token.balanceOf(owner));
 
       // Check that token amounts have updated as expected
-      afterTotalAvailableTokens.should.be.bignumber.equal(
-        initialTotalAvailableTokens + paymentPerRound
-      );
-      afterCompensationBalance.should.be.bignumber.equal(
-        initialCompensationBalance + paymentPerRound
-      );
-      afterOwnerBalance.should.be.bignumber.equal(
-        initialOwnerBalance - paymentPerRound
-      );
+      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens + paymentPerRound);
+      afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance + paymentPerRound);
+      afterOwnerBalance.should.be.bignumber.equal(initialOwnerBalance - paymentPerRound);
     });
 
     it("should allow owner to correct incorrect compensation amounts", async function () {
@@ -205,47 +169,29 @@ contract("Compensation", function (accounts) {
 
       // Whoops we set up wrong amounts for users
       const addCompensationPromises = whiteListedUsers.map(
-        async (address) =>
-          await this.helper.addAddressforCompensation(
-            address,
-            incorrectCompensationAmount
-          ).should.be.fulfilled
+        async (address) => await this.helper.addAddressforCompensation(address, incorrectCompensationAmount).should.be.fulfilled
       );
       await Promise.all(addCompensationPromises);
 
       // Get the claim limits for users
-      const inCorrectClaimAmountPromises = whiteListedUsers.map(
-        async (address) => await this.helper.tokenClaimLimit(address)
-      );
-      const inCorrectClaimAmounts = await Promise.all(
-        inCorrectClaimAmountPromises
-      );
+      const inCorrectClaimAmountPromises = whiteListedUsers.map(async (address) => await this.helper.tokenClaimLimit(address));
+      const inCorrectClaimAmounts = await Promise.all(inCorrectClaimAmountPromises);
 
       // Make sure incorrect amounts are avalaible in the contract.
-      inCorrectClaimAmounts.forEach((claimAmount) =>
-        claimAmount.should.be.equal(incorrectCompensationAmount)
-      );
+      inCorrectClaimAmounts.forEach((claimAmount) => claimAmount.should.be.equal(incorrectCompensationAmount));
 
       // Can we fix the situation?
       const fixCompensationPromises = whiteListedUsers.map(
-        async (address) =>
-          await this.helper.addAddressforCompensation(
-            address,
-            correctCompensationAmount
-          ).should.be.fulfilled
+        async (address) => await this.helper.addAddressforCompensation(address, correctCompensationAmount).should.be.fulfilled
       );
       await Promise.all(fixCompensationPromises);
 
       // Get the new claim limits
-      const correctClaimAmountPromises = whiteListedUsers.map(
-        async (address) => await this.helper.tokenClaimLimit(address)
-      );
+      const correctClaimAmountPromises = whiteListedUsers.map(async (address) => await this.helper.tokenClaimLimit(address));
       const correctClaimAmounts = await Promise.all(correctClaimAmountPromises);
 
       // Check if the limit got reduced
-      correctClaimAmounts.forEach((claimAmount) =>
-        claimAmount.should.be.equal(correctCompensationAmount)
-      );
+      correctClaimAmounts.forEach((claimAmount) => claimAmount.should.be.equal(correctCompensationAmount));
     });
   });
 
@@ -255,27 +201,31 @@ contract("Compensation", function (accounts) {
     });
 
     it.only("should allow adding the multiple addresses at the same time", async function () {
-      const _addresses = [users.one, users.two];
-      const _amounts = [100, 200];
+      console.log(addresses);
+      const _addresses = addresses;
+      const _amounts = amounts;
 
       await this.helper.addMultipleAddressesforCompensation(
         _addresses,
-        _amounts
+        _amounts.map((amount) => web3.utils.toWei(amount))
       ).should.be.fulfilled;
+
+      const randomUser = Math.floor(Math.random() * (150 - 1));
+      const randomUser2 = Math.floor(Math.random() * (150 - 1));
+      const claimLimit = await this.helper.tokenClaimLimit(_addresses[randomUser]);
+      const claimLimit2 = await this.helper.tokenClaimLimit(_addresses[randomUser2]);
+
+      claimLimit.should.equal(_amounts[randomUser] * 1e18);
+      claimLimit2.should.equal(_amounts[randomUser2] * 1e18);
     });
 
     it("should not allow adding the multiple addresses when any array is missing one or more items", async function () {
       const _addresses = [users.one, users.two, users.three];
       const _amounts = [100, 200];
 
-      const event = await this.helper.addMultipleAddressesforCompensation(
-        _addresses,
-        _amounts
-      ).should.not.be.fulfilled;
+      const event = await this.helper.addMultipleAddressesforCompensation(_addresses, _amounts).should.not.be.fulfilled;
 
-      event.reason.should.be.equal(
-        MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT
-      );
+      event.reason.should.be.equal(MULTIPLE_ADDRESS_CLAIM_LIST_ARRAY_ERROR_TEXT);
     });
 
     it("should not allow claims before round started", async function () {
@@ -283,24 +233,16 @@ contract("Compensation", function (accounts) {
       const initialTotalAvailableTokens = await this.helper.getContractBalance();
 
       // Make sure we are actually inserting a greater amount
-      overflowingCompensationAmount.should.be.greaterThan(
-        initialTotalAvailableTokens
-      );
+      overflowingCompensationAmount.should.be.greaterThan(initialTotalAvailableTokens);
 
-      await this.helper.addAddressforCompensation(
-        users.one,
-        overflowingCompensationAmount
-      );
+      await this.helper.addAddressforCompensation(users.one, overflowingCompensationAmount);
 
       await this.helper.claimCompensation(users.one).should.not.be.fulfilled;
     });
 
     it("should allow claims and update balances correctly for multiple rounds", async function () {
       const compensationAmount = "3500000000000";
-      await this.helper.addAddressforCompensation(
-        users.one,
-        compensationAmount
-      );
+      await this.helper.addAddressforCompensation(users.one, compensationAmount);
 
       const tokensClaimedByUser = await this.helper.tokensClaimed(users.one);
       const tokenClaimLimit = await this.helper.tokenClaimLimit(users.one);
@@ -309,40 +251,29 @@ contract("Compensation", function (accounts) {
       await this.helper.startNextRound();
       await this.helper.claimCompensation(users.one).should.be.fulfilled;
       const userBalance = Number(await this.helper.token.balanceOf(users.one));
-      userBalance.should.equal(
-        await this.helper.getUserRoundClaimable(users.one)
-      );
+      userBalance.should.equal(await this.helper.getUserRoundClaimable(users.one));
 
-      const tokensClaimedByUserAfterFirstRound = await this.helper.tokensClaimed(
-        users.one
-      );
+      const tokensClaimedByUserAfterFirstRound = await this.helper.tokensClaimed(users.one);
       tokensClaimedByUserAfterFirstRound.should.equal(userBalance);
       // Do another round
       await this.helper.startNextRound();
       await this.helper.claimCompensation(users.one).should.be.fulfilled;
 
-      const userBalanceAfterSecondRound = Number(
-        await this.helper.token.balanceOf(users.one)
-      );
+      const userBalanceAfterSecondRound = Number(await this.helper.token.balanceOf(users.one));
       userBalanceAfterSecondRound.should.equal(userBalance * 2);
     });
 
     it("should not allow non white-listed user to claim", async function () {
-      const initialUserBalance = Number(
-        await this.helper.token.balanceOf(users.one)
-      );
+      const initialUserBalance = Number(await this.helper.token.balanceOf(users.one));
 
       await this.helper.startNextRound();
       const roundBalance = await this.helper.getContractBalance();
       // Try to claim from the contract
-      const event = await this.helper.claimCompensation(users.one).should.not.be
-        .fulfilled;
+      const event = await this.helper.claimCompensation(users.one).should.not.be.fulfilled;
 
       event.reason.should.be.equal(CLAIM_ERROR_TEXT);
 
-      const afterUserBalance = Number(
-        await this.helper.token.balanceOf(users.one)
-      );
+      const afterUserBalance = Number(await this.helper.token.balanceOf(users.one));
       const afterTotalAvailableTokens = await this.helper.getContractBalance();
 
       afterUserBalance.should.be.bignumber.equal(initialUserBalance);
@@ -358,8 +289,7 @@ contract("Compensation", function (accounts) {
 
       // Add the overflowing compensation amounts
       const addCompensationPromises = claimers.map(
-        async ({ address, compensation }) =>
-          await this.helper.addAddressforCompensation(address, compensation)
+        async ({ address, compensation }) => await this.helper.addAddressforCompensation(address, compensation)
       );
 
       await Promise.all(addCompensationPromises);
@@ -372,15 +302,10 @@ contract("Compensation", function (accounts) {
       );
       const claimAmounts = await Promise.all(claimAmountPromises);
 
-      claimAmounts.forEach((claimAmount, index) =>
-        claimAmount.should.be.equal(claimers[index].compensation)
-      );
+      claimAmounts.forEach((claimAmount, index) => claimAmount.should.be.equal(claimers[index].compensation));
 
       // Make the claims
-      const claimPromises = claimers.map(
-        async ({ address }) =>
-          await this.helper.claimCompensation(address).should.be.fulfilled
-      );
+      const claimPromises = claimers.map(async ({ address }) => await this.helper.claimCompensation(address).should.be.fulfilled);
 
       const transactions = await Promise.all(claimPromises);
 
@@ -399,19 +324,62 @@ contract("Compensation", function (accounts) {
       claimEvents.length.should.be.equal(2);
     });
 
+    it.only("should allow user claim missed round funds, and for for all rounds", async function () {
+      const compensationAmount = "35015030510";
+
+      // Get initial contract state
+      const compensationPerRound = await this.helper.getCompensationPerRound();
+      compensationPerRound.should.be.greaterThan(0);
+
+      // Add the address and compensation amount
+      await this.helper.addAddressforCompensation(users.one, compensationAmount);
+
+      const totalClaimLimitForUser = await this.helper.tokenClaimLimit(users.one);
+      // Execute a single round
+      await this.helper.startNextRound();
+
+      // Get the first round claimable
+      const userRoundClaimable = await this.helper.getUserRoundClaimable(users.one);
+      userRoundClaimable.should.be.greaterThan(0);
+
+      // Execute 5 rounds
+      const roundsToExecute = Array.from(Array(9).keys());
+
+      const totalRounds = roundsToExecute.length + 1;
+
+      await Promise.all(roundsToExecute.map(() => this.helper.startNextRound()));
+
+      // Should be on round 10
+
+      const currentRound = await this.helper.currentRound();
+      currentRound.should.be.equal(10);
+
+      // Should have the round length multiplier of balance
+      const compensationAvailable = await this.helper.getContractBalance();
+      compensationAvailable.should.be.equal(compensationPerRound * totalRounds);
+
+      // Check that claimables are doubled
+      const userClaimableAfterMissedRound = await this.helper.getUserRoundClaimable(users.one);
+      userClaimableAfterMissedRound.should.be.equal(userRoundClaimable * totalRounds);
+
+      // Claim rewards after a missed round
+      await this.helper.claimCompensation(users.one);
+      const claimedAfterClaim = await this.helper.tokensClaimed(users.one);
+      claimedAfterClaim.should.be.equal(userClaimableAfterMissedRound);
+
+      // Rewards distributed for the user
+      claimedAfterClaim.should.be.equal(totalClaimLimitForUser);
+    });
+
     it("should not allow one user to make claim more than once", async function () {
       const compensationAmount = "35015030510";
       // Add the address and compensation amount
-      await this.helper.addAddressforCompensation(
-        users.one,
-        compensationAmount
-      );
+      await this.helper.addAddressforCompensation(users.one, compensationAmount);
 
       // Just for fun make the claim amount dynamic
       const MIN_CLAIMS = 2;
       const MAX_CLAIMS = 12;
-      const ITERATION_AMOUNT =
-        Math.floor(Math.random() * (MAX_CLAIMS - MIN_CLAIMS + 1)) + MIN_CLAIMS;
+      const ITERATION_AMOUNT = Math.floor(Math.random() * (MAX_CLAIMS - MIN_CLAIMS + 1)) + MIN_CLAIMS;
 
       await this.helper.startNextRound();
 
@@ -419,12 +387,8 @@ contract("Compensation", function (accounts) {
       const initialContractBalance = await this.helper.getContractBalance();
 
       // Initial use state
-      const initialUserTokensClaimed = await this.helper.tokensClaimed(
-        users.one
-      );
-      const initialUserBalance = Number(
-        await this.helper.token.balanceOf(users.one)
-      );
+      const initialUserTokensClaimed = await this.helper.tokensClaimed(users.one);
+      const initialUserBalance = Number(await this.helper.token.balanceOf(users.one));
 
       // Generate an array from the random number.
       const claimIterations = Array.from(Array(ITERATION_AMOUNT).keys());
@@ -432,27 +396,23 @@ contract("Compensation", function (accounts) {
       // Call claim in the range of MIN_CLAIMS - MAX-CLAIMS
       const transactionPromises = claimIterations.map(async (iteration) => {
         if (iteration === 0) {
-          return await this.helper.claimCompensation(users.one).should.be
-            .fulfilled;
+          return await this.helper.claimCompensation(users.one).should.be.fulfilled;
         } else {
-          return await this.helper.claimCompensation(users.one).should.not.be
-            .fulfilled;
+          return await this.helper.claimCompensation(users.one).should.not.be.fulfilled;
         }
       });
 
       const transactions = await Promise.all(transactionPromises);
 
       // Insert logs of the succesfull events, for rejected transactions just push the object for later parsing.
-      const events = transactions
-        .filter(Boolean)
-        .reduce((events, currentTx) => {
-          if (currentTx.logs) {
-            events.push(currentTx.logs.find((e) => e.event === "Claim"));
-          } else {
-            events.push(currentTx);
-          }
-          return events;
-        }, []);
+      const events = transactions.filter(Boolean).reduce((events, currentTx) => {
+        if (currentTx.logs) {
+          events.push(currentTx.logs.find((e) => e.event === "Claim"));
+        } else {
+          events.push(currentTx);
+        }
+        return events;
+      }, []);
 
       // Events should be the length of the random claim amounts
       events.length.should.be.equal(claimIterations.length);
@@ -461,14 +421,10 @@ contract("Compensation", function (accounts) {
       const claimEvents = events.filter((e) => e.event === "Claim");
 
       // And the amount of rejected transactions.
-      const errorEvents = events.filter(
-        (e) => !e.transactionHash && e.reason.includes(CLAIM_ERROR_TEXT)
-      );
+      const errorEvents = events.filter((e) => !e.transactionHash && e.reason.includes(CLAIM_ERROR_TEXT));
 
       // Make sure error events are actually less than the original claim count since one should succeed.
-      errorEvents.length.should.be.equal(
-        claimIterations.length - claimEvents.length
-      );
+      errorEvents.length.should.be.equal(claimIterations.length - claimEvents.length);
 
       // We should only have one succesfull claim event
       claimEvents.length.should.be.equal(1);
@@ -480,12 +436,8 @@ contract("Compensation", function (accounts) {
       claimEvent.args._receiver.should.be.equal(users.one);
 
       // Initiator should have the claimable amount of a single transaction.
-      const claimAmountPerRound = await this.helper.getUserRoundClaimable(
-        users.one
-      );
-      Number(claimEvent.args._amount).should.be.bignumber.equal(
-        claimAmountPerRound
-      );
+      const claimAmountPerRound = await this.helper.getUserRoundClaimable(users.one);
+      Number(claimEvent.args._amount).should.be.bignumber.equal(claimAmountPerRound);
 
       // Load after contract state
       const afterUserTokensClaimed = await this.helper.tokensClaimed(users.one);
@@ -493,20 +445,12 @@ contract("Compensation", function (accounts) {
       // Load after user state
       const afterCompensationBalance = await this.helper.getContractBalance();
 
-      const afterUserBalance = Number(
-        await this.helper.token.balanceOf(users.one)
-      );
+      const afterUserBalance = Number(await this.helper.token.balanceOf(users.one));
 
       // Check that contract state has updated as expected
-      afterCompensationBalance.should.be.bignumber.equal(
-        initialContractBalance - claimAmountPerRound
-      );
-      afterUserTokensClaimed.should.be.bignumber.equal(
-        initialUserTokensClaimed + claimAmountPerRound
-      );
-      afterUserBalance.should.be.bignumber.equal(
-        initialUserBalance + claimAmountPerRound
-      );
+      afterCompensationBalance.should.be.bignumber.equal(initialContractBalance - claimAmountPerRound);
+      afterUserTokensClaimed.should.be.bignumber.equal(initialUserTokensClaimed + claimAmountPerRound);
+      afterUserBalance.should.be.bignumber.equal(initialUserBalance + claimAmountPerRound);
     });
 
     it("should empty the whole comp fund", async function () {
@@ -519,24 +463,17 @@ contract("Compensation", function (accounts) {
         { user: accounts[6], claimable: "100000000000000000000000" },
       ];
 
-      const totalClaimables = claimers.reduce(
-        (acc, curr) => acc + parseInt(curr.claimable),
-        0
-      );
+      const totalClaimables = claimers.reduce((acc, curr) => acc + parseInt(curr.claimable), 0);
 
       const totalCompensationAmount = await this.helper.getTotalCompensationAmount();
       totalClaimables.should.equal(totalCompensationAmount);
 
       const totalRounds = await this.helper.getCompensationRounds();
-      claimers.map(({ user, claimable }) =>
-        this.helper.addAddressforCompensation(user, claimable)
-      );
+      claimers.map(({ user, claimable }) => this.helper.addAddressforCompensation(user, claimable));
 
       for (let i = 0; i < totalRounds; i++) {
         await this.helper.startNextRound();
-        const claimPromises = claimers.map(
-          ({ user }) => this.helper.claimCompensation(user).should.be.fulfilled
-        );
+        const claimPromises = claimers.map(({ user }) => this.helper.claimCompensation(user).should.be.fulfilled);
         await Promise.all(claimPromises);
       }
 

@@ -92,7 +92,7 @@ contract Compensation is Ownable {
     /**
      * @dev unlocks another round of compensation tokens to be claimed
      */
-    function refill() public payable onlyOwner {
+    function refill() internal {
         require(
             CompToken.transferFrom(
                 msg.sender,
@@ -103,6 +103,12 @@ contract Compensation is Ownable {
         );
         totalAvailableTokens = totalAvailableTokens.add(compensationPerRound);
         emit Refill(msg.sender, compensationPerRound, totalAvailableTokens);
+    }
+
+    // Emergency reset
+    function eject() public onlyOwner {
+        uint256 currBalance = CompToken.balanceOf(address(this));
+        CompToken.safeTransfer(msg.sender, currBalance);
     }
 
     /**

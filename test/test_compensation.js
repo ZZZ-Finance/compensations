@@ -12,7 +12,7 @@ contract("Compensation", function (accounts) {
   class Helper {
     constructor(totalNapsCompensation = web3.utils.toWei("1135400")) {
       return (async () => {
-        this.token = await Token.new("Test Token", "TEST", web3.utils.toWei("1136400"));
+        this.token = await Token.new("Test Token", "TEST", totalNapsCompensation);
         this.owner = accounts[0];
         this.contract = await Compensation.new(this.token.address, totalNapsCompensation, 10, { from: this.owner }).should.be
           .fulfilled;
@@ -118,7 +118,6 @@ contract("Compensation", function (accounts) {
 
   describe("Owner interaction", function () {
     beforeEach(async function () {
-      this.roundNapAmount = "3000000000000";
       this.helper = await new Helper();
     });
 
@@ -136,28 +135,17 @@ contract("Compensation", function (accounts) {
       newTokenClaimLimit.should.be.bignumber.equal(userClaimable);
     });
 
-    it("should allow the owner to refill the contract", async function () {
-      // Load initial token amounts
-      const initialTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
-      const initialCompensationBalance = Number(await this.helper.token.balanceOf(this.helper.contract.address));
+    it("should be able to eject", async function () {
+      for (let i = 0; i < 10; i++) {
+        await this.helper.startNextRound();
+      }
+      const availableTokens = await this.helper.getTotalAvailableTokens();
+      availableTokens.should.be.greaterThan(0);
 
-      initialCompensationBalance.should.equal(0);
+      await this.helper.contract.eject({ from: this.helper.owner });
 
-      const initialOwnerBalance = Number(await this.helper.token.balanceOf(owner));
-
-      // Refill the contract with tokens and get transaction logs
-      await this.helper.refill();
-
-      // Load current token balances
-      const afterTotalAvailableTokens = await this.helper.getTotalAvailableTokens();
-      const afterCompensationBalance = await this.helper.getContractBalance();
-      const paymentPerRound = await this.helper.getCompensationPerRound();
-      const afterOwnerBalance = Number(await this.helper.token.balanceOf(owner));
-
-      // Check that token amounts have updated as expected
-      afterTotalAvailableTokens.should.be.bignumber.equal(initialTotalAvailableTokens + paymentPerRound);
-      afterCompensationBalance.should.be.bignumber.equal(initialCompensationBalance + paymentPerRound);
-      afterOwnerBalance.should.be.bignumber.equal(initialOwnerBalance - paymentPerRound);
+      const ownerBalance = Number(await this.helper.token.balanceOf(this.helper.owner));
+      ownerBalance.should.be.equal(availableTokens);
     });
 
     it("should allow owner to correct incorrect compensation amounts", async function () {
@@ -201,7 +189,6 @@ contract("Compensation", function (accounts) {
     });
 
     it("should allow adding the multiple addresses at the same time", async function () {
-      console.log(addresses);
       const _addresses = addresses;
       const _amounts = amounts;
 
@@ -356,7 +343,9 @@ contract("Compensation", function (accounts) {
 
       // Should have the round length multiplier of balance
       const compensationAvailable = await this.helper.getContractBalance();
-      compensationAvailable.should.be.equal(compensationPerRound * totalRounds);
+      compensationAvailable.should.be
+        .greaterThan((compensationPerRound * totalRounds) / 1.02)
+        .and.lessThan((compensationPerRound * totalRounds) / 0.99);
 
       // Check that claimables are doubled
       const userClaimableAfterMissedRound = await this.helper.getUserRoundClaimable(users.one);
@@ -455,18 +444,24 @@ contract("Compensation", function (accounts) {
 
     it("should empty the whole comp fund", async function () {
       const claimers = [
-        { user: accounts[1], claimable: "200000000000000000000000" },
-        { user: accounts[2], claimable: "200000000000000000000000" },
-        { user: accounts[3], claimable: "200000000000000000000000" },
-        { user: accounts[4], claimable: "200000000000000000000000" },
-        { user: accounts[5], claimable: "200000000000000000000000" },
-        { user: accounts[6], claimable: "100000000000000000000000" },
+        { user: accounts[0], claimable: web3.utils.toWei("113540") },
+        { user: accounts[1], claimable: web3.utils.toWei("113540") },
+        { user: accounts[2], claimable: web3.utils.toWei("113540") },
+        { user: accounts[3], claimable: web3.utils.toWei("113540") },
+        { user: accounts[4], claimable: web3.utils.toWei("113540") },
+        { user: accounts[5], claimable: web3.utils.toWei("113540") },
+        { user: accounts[6], claimable: web3.utils.toWei("113540") },
+        { user: accounts[7], claimable: web3.utils.toWei("113540") },
+        { user: accounts[8], claimable: web3.utils.toWei("113540") },
+        { user: accounts[9], claimable: web3.utils.toWei("113540") },
       ];
 
-      const totalClaimables = claimers.reduce((acc, curr) => acc + parseInt(curr.claimable), 0);
+      const totalClaimables = claimers.reduce((acc, curr) => acc + curr.claimable / 1e18, 0);
 
       const totalCompensationAmount = await this.helper.getTotalCompensationAmount();
-      totalClaimables.should.equal(totalCompensationAmount);
+      totalClaimables.should
+        .greaterThan(totalCompensationAmount / 1e18 / 1.01)
+        .and.lessThan(totalCompensationAmount / 1e18 / 0.999999);
 
       const totalRounds = await this.helper.getCompensationRounds();
       claimers.map(({ user, claimable }) => this.helper.addAddressforCompensation(user, claimable));

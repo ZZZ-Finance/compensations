@@ -200,7 +200,7 @@ contract("Compensation", function (accounts) {
       this.helper = await new Helper();
     });
 
-    it.only("should allow adding the multiple addresses at the same time", async function () {
+    it("should allow adding the multiple addresses at the same time", async function () {
       console.log(addresses);
       const _addresses = addresses;
       const _amounts = amounts;
@@ -324,7 +324,7 @@ contract("Compensation", function (accounts) {
       claimEvents.length.should.be.equal(2);
     });
 
-    it.only("should allow user claim missed round funds, and for for all rounds", async function () {
+    it("should allow user claim missed round funds, and for for all rounds", async function () {
       const compensationAmount = "35015030510";
 
       // Get initial contract state

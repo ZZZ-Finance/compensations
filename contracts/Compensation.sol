@@ -110,10 +110,12 @@ contract Compensation is Ownable {
      */
     function startnextround() public onlyOwner {
         require(
-            currentRound != totalRounds,
+            currentRound <= totalRounds,
             "Compensation completed, all rounds have been completed."
         );
-        currentRound++;
+        if (currentRound < totalRounds) {
+            currentRound++;
+        }
         refill();
         emit NextRound(currentRound);
     }
